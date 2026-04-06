@@ -1,0 +1,72 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Todo, TodoFormData } from '@/types';
+import {
+  getTodos,
+  createTodo,
+  updateTodo,
+  deleteTodo,
+  toggleTodoCompletion,
+} from '@/lib/firestore';
+import { useAuthStore } from '@/store/authStore';
+
+export function useTodos() {
+  const { user } = useAuthStore();
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTodos = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const data = await getTodos(user.uid);
+      setTodos(data);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchTodos();
+  }, [fetchTodos]);
+
+  async function addTodo(data: TodoFormData) {
+    if (!user) return;
+    await createTodo(user.uid, data);
+    await fetchTodos();
+  }
+
+  async function editTodo(id: string, data: Partial<Todo>) {
+    if (!user) return;
+    await updateTodo(user.uid, id, data);
+    await fetchTodos();
+  }
+
+  async function removeTodo(id: string) {
+    if (!user) return;
+    await deleteTodo(user.uid, id);
+    setTodos((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  async function toggleTodo(todo: Todo) {
+    if (!user) return;
+    // Optimistic
+    setTodos((prev) =>
+      prev.map((t) => (t.id === todo.id ? { ...t, completed: !t.completed } : t))
+    );
+    try {
+      await toggleTodoCompletion(user.uid, todo);
+    } catch {
+      await fetchTodos();
+    }
+  }
+
+  const pending = todos.filter((t) => !t.completed);
+  const completed = todos.filter((t) => t.completed);
+
+  return { todos, pending, completed, loading, error, addTodo, editTodo, removeTodo, toggleTodo, refetch: fetchTodos };
+}
