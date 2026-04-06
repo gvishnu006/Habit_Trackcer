@@ -1,0 +1,67 @@
+'use client';
+
+import { useEffect } from 'react';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
+} from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import { useAuthStore } from '@/store/authStore';
+import { useRouter } from 'next/navigation';
+
+export function useAuth() {
+  const { user, loading, setUser, setLoading } = useAuthStore();
+  const router = useRouter();
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return unsub;
+  }, [setUser, setLoading]);
+
+  async function login(email: string, password: string) {
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    return cred;
+  }
+
+  async function signup(email: string, password: string, displayName: string) {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(cred.user, { displayName });
+    setUser({
+      uid: cred.user.uid,
+      email: cred.user.email,
+      displayName,
+      photoURL: null,
+    });
+    return cred;
+  }
+
+  async function loginWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    return cred;
+  }
+
+  async function logout() {
+    await signOut(auth);
+    router.push('/login');
+  }
+
+  return { user, loading, login, signup, loginWithGoogle, logout };
+}
