@@ -1,0 +1,76 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Habit, HabitFormData } from '@/types';
+import {
+  getHabits,
+  createHabit,
+  updateHabit,
+  deleteHabit,
+  toggleHabitCompletion,
+} from '@/lib/firestore';
+import { useAuthStore } from '@/store/authStore';
+
+export function useHabits() {
+  const { user } = useAuthStore();
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchHabits = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const data = await getHabits(user.uid);
+      setHabits(data);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchHabits();
+  }, [fetchHabits]);
+
+  async function addHabit(data: HabitFormData) {
+    if (!user) return;
+    const id = await createHabit(user.uid, data);
+    await fetchHabits();
+    return id;
+  }
+
+  async function editHabit(id: string, data: Partial<Habit>) {
+    if (!user) return;
+    await updateHabit(user.uid, id, data);
+    await fetchHabits();
+  }
+
+  async function removeHabit(id: string) {
+    if (!user) return;
+    await deleteHabit(user.uid, id);
+    setHabits((prev) => prev.filter((h) => h.id !== id));
+  }
+
+  async function toggleHabit(habit: Habit) {
+    if (!user) return;
+    // Optimistic update
+    const today = new Date().toISOString().slice(0, 10);
+    const isCompleted = habit.completedDates.includes(today);
+    const newDates = isCompleted
+      ? habit.completedDates.filter((d) => d !== today)
+      : [...habit.completedDates, today];
+    setHabits((prev) =>
+      prev.map((h) => (h.id === habit.id ? { ...h, completedDates: newDates } : h))
+    );
+    try {
+      await toggleHabitCompletion(user.uid, habit);
+      await fetchHabits();
+    } catch {
+      await fetchHabits(); // rollback
+    }
+  }
+
+  return { habits, loading, error, addHabit, editHabit, removeHabit, toggleHabit, refetch: fetchHabits };
+}
